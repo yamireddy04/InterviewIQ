@@ -1,0 +1,136 @@
+"use client";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { getReport } from "@/lib/api";
+import { Report } from "@/types";
+import { Navbar } from "@/components/layout/Navbar";
+import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Badge, Progress } from "@/components/ui/Badge";
+import { scoreColor } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
+import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer } from "recharts";
+import { Download, BookOpen, Target, TrendingUp, Loader2 } from "lucide-react";
+
+export default function ReportPage() {
+  const { id } = useParams();
+  const [report, setReport] = useState<Report | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getReport(id as string)
+      .then((r) => { setReport(r); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [id]);
+
+  const exportPDF = async () => {
+    const { default: jsPDF } = await import("jspdf");
+    const { default: html2canvas } = await import("html2canvas");
+    const el = document.getElementById("report-content");
+    if (!el) return;
+    const canvas = await html2canvas(el, { backgroundColor: "#08090c" });
+    const pdf = new jsPDF("p", "mm", "a4");
+    const w = pdf.internal.pageSize.getWidth();
+    const h = (canvas.height / canvas.width) * w;
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, w, h);
+    pdf.save(`InterviewIQ_Report_${id}.pdf`);
+  };
+
+  if (loading) return (
+    <div className="min-h-screen bg-night-950 flex items-center justify-center">
+      <Loader2 className="animate-spin text-accent" size={32} />
+    </div>
+  );
+  if (!report) return (
+    <div className="min-h-screen bg-night-950 flex items-center justify-center text-gray-400">
+      Report not found
+    </div>
+  );
+
+  const radarData = [
+    { subject: "Technical", value: report.category_scores.technical_knowledge * 10 },
+    { subject: "Communication", value: report.category_scores.communication * 10 },
+    { subject: "Clarity", value: report.category_scores.clarity * 10 },
+    { subject: "Confidence", value: report.category_scores.confidence * 10 },
+  ];
+
+  return (
+    <div className="min-h-screen bg-night-950">
+      <Navbar />
+      <main className="pt-24 pb-16 px-6 max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="font-display text-3xl font-bold">Interview Report</h1>
+            <p className="text-gray-400 mt-1">{report.completed_questions} of {report.total_questions} questions completed</p>
+          </div>
+          <Button onClick={exportPDF} variant="outline"><Download size={14} /> Export PDF</Button>
+        </div>
+        <div id="report-content" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="md:col-span-2 flex flex-col items-center justify-center text-center py-8">
+              <p className="text-gray-500 text-sm mb-2">Overall Score</p>
+              <p className={`font-display text-7xl font-bold ${scoreColor(report.overall_score)}`}>{report.overall_score}</p>
+              <p className="text-gray-500 text-sm mt-1">out of 10</p>
+            </Card>
+            <Card className="md:col-span-2">
+              <ResponsiveContainer width="100%" height={180}>
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke="rgba(255,255,255,0.05)" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11, fill: "#6b7280" }} />
+                  <Radar dataKey="value" stroke="#6c63ff" fill="#6c63ff" fillOpacity={0.2} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </Card>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Object.entries(report.category_scores).map(([key, val]) => (
+              <Card key={key} className="flex items-center gap-4 py-4">
+                <div className="flex-1">
+                  <p className="text-sm capitalize text-gray-400 mb-1.5">{key.replace(/_/g, " ")}</p>
+                  <Progress value={val as number} />
+                </div>
+                <span className={`font-display font-bold text-lg ${scoreColor(val as number)}`}>{(val as number).toFixed(1)}</span>
+              </Card>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2 text-red-400"><Target size={14} /> Weak Areas</CardTitle></CardHeader>
+              <ul className="space-y-2">
+                {report.weak_areas.map((a, i) => <li key={i} className="text-sm text-gray-300 flex gap-2"><span className="text-red-500">•</span>{a}</li>)}
+              </ul>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2 text-accent"><BookOpen size={14} /> Study Topics</CardTitle></CardHeader>
+              <ul className="space-y-2">
+                {report.recommended_topics.map((t, i) => <li key={i} className="text-sm text-gray-300 flex gap-2"><span className="text-accent">→</span>{t}</li>)}
+              </ul>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2 text-emerald-400"><TrendingUp size={14} /> Improvements</CardTitle></CardHeader>
+              <ul className="space-y-2">
+                {report.suggested_improvements.map((s, i) => <li key={i} className="text-sm text-gray-300 flex gap-2"><span className="text-emerald-500">✓</span>{s}</li>)}
+              </ul>
+            </Card>
+          </div>
+          <Card>
+            <CardHeader><CardTitle>Question Breakdown</CardTitle></CardHeader>
+            <div className="space-y-4">
+              {report.question_breakdown.map((q, i) => (
+                <div key={i} className="border-t border-white/5 pt-4 first:border-0 first:pt-0">
+                  <div className="flex items-start justify-between gap-4 mb-2">
+                    <p className="text-sm text-gray-300 flex-1">{q.question}</p>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Badge text={q.category} type="category" />
+                      <span className={`font-bold text-sm ${scoreColor(q.score)}`}>{q.score}/10</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 line-clamp-2">{q.answer}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </main>
+    </div>
+  );
+}
