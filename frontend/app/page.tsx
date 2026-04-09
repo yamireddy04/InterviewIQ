@@ -18,9 +18,11 @@ export default function Home() {
       <Navbar />
       <main className="pt-32 pb-24 px-6 max-w-7xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-20">
-        <span className="bg-gradient-to-r from-accent to-accent-light bg-clip-text text-transparent">
+          <h2 className="font-display text-5xl font-extrabold tracking-tight mb-4">
+            <span className="bg-gradient-to-r from-accent to-accent-light bg-clip-text text-transparent">
               InterviewIQ
-            </span>{" "}
+            </span>
+          </h2>
           <h1 className="font-display text-6xl font-bold leading-tight mb-6">
             Ace your next<br />
             <span className="bg-gradient-to-r from-accent to-accent-light bg-clip-text text-transparent">
