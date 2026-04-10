@@ -1,8 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.config import settings
-import ssl
 
-client: AsyncIOMotorClient = None
+client = None
 db = None
 
 async def connect_db():
@@ -11,6 +10,9 @@ async def connect_db():
         settings.mongodb_url,
         tls=True,
         tlsAllowInvalidCertificates=True,
+        serverSelectionTimeoutMS=30000,
+        connectTimeoutMS=30000,
+        socketTimeoutMS=30000,
     )
     db = client[settings.db_name]
 
