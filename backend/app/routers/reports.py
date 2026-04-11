@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from app.services.report_service import generate_report
+from app.services.evaluation_service import evaluate_answer
 from app.database import get_db
-from app.models.session import Session, SessionMode, Question, Answer, Feedback, QuestionCategory, DifficultyLevel
-from app.models.report import Report, CategoryScore
+from app.models.session import Session, SessionMode, Feedback, Answer
 from datetime import datetime
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -17,9 +17,12 @@ async def generate(session_id: str):
         data = None
 
         if db is not None:
-            data = await db.sessions.find_one({"id": session_id})
-            if data:
-                data.pop("_id", None)
+            try:
+                data = await db.sessions.find_one({"id": session_id})
+                if data:
+                    data.pop("_id", None)
+            except Exception as db_err:
+                print(f"DB read failed: {db_err}")
 
         if not data and session_id in in_memory_sessions:
             data = in_memory_sessions[session_id]
@@ -28,15 +31,59 @@ async def generate(session_id: str):
             raise HTTPException(status_code=404, detail="Session not found")
 
         session = Session(**data)
-        report = await generate_report(session)
 
+        if len(session.feedbacks) == 0 and len(session.answers) > 0:
+            print(f"Simulation mode: evaluating {len(session.answers)} answers...")
+            feedbacks = []
+            questions = session.questions
+            answers = session.answers
+
+            for i, answer in enumerate(answers):
+                if i < len(questions):
+                    q = questions[i]
+                else:
+                    q = questions[-1] if questions else None
+
+                if q:
+                    try:
+                        fb = await evaluate_answer(
+                            question_id=q.id,
+                            question_text=q.text,
+                            category=str(q.category.value),
+                            difficulty=str(q.difficulty.value),
+                            answer_text=answer.text,
+                            job_role=session.job_role,
+                        )
+                        feedbacks.append(fb)
+                    except Exception as eval_err:
+                        print(f"Eval error for Q{i}: {eval_err}")
+                        feedbacks.append(Feedback(
+                            question_id=q.id,
+                            correctness="Partially Correct",
+                            score=5,
+                            strengths=["Answer provided"],
+                            weaknesses=["Could not evaluate"],
+                            ideal_answer="",
+                            suggestions=[],
+                        ))
+
+            session.feedbacks = feedbacks
+
+            if session_id in in_memory_sessions:
+                in_memory_sessions[session_id]["feedbacks"] = [f.model_dump() for f in feedbacks]
+
+        report = await generate_report(session)
         in_memory_reports[session_id] = report.model_dump()
 
         if db is not None:
             try:
                 await db.sessions.update_one(
                     {"id": session_id},
-                    {"$set": {"overall_score": report.overall_score, "completed_at": datetime.utcnow().isoformat()}},
+                    {"$set": {
+                        "overall_score": report.overall_score,
+                        "completed_at": datetime.utcnow().isoformat(),
+                        "feedbacks": [f.model_dump() for f in session.feedbacks],
+                    }},
                 )
                 await db.reports.insert_one(report.model_dump())
             except Exception as db_error:
@@ -74,9 +121,12 @@ async def get_report(session_id: str):
 
         db = get_db()
         if db is not None:
-            data = await db.reports.find_one({"session_id": session_id}, {"_id": 0})
-            if data:
-                return data
+            try:
+                data = await db.reports.find_one({"session_id": session_id}, {"_id": 0})
+                if data:
+                    return data
+            except Exception as db_error:
+                print(f"DB read skipped: {db_error}")
 
         raise HTTPException(status_code=404, detail="Report not found")
     except HTTPException:

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from app.models.question import SimulateRequest
-from app.services.evaluation_service import get_interviewer_response
-from app.models.session import Answer
+from app.services.evaluation_service import get_interviewer_response, evaluate_answer
+from app.models.session import Answer, Feedback
 from app.database import get_db
 from app.routers.reports import in_memory_sessions
 
