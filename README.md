@@ -8,7 +8,7 @@
 [![DB](https://img.shields.io/badge/DB-MongoDB%20Atlas-7ecb84?style=flat-square)](https://www.mongodb.com/atlas)
 [![Status](https://img.shields.io/badge/Status-Active-7ecb84?style=flat-square)]()
 
-🔗 **Live Demo:** https://interview-iq-umber.vercel.app/
+🌐 **Live Demo:** https://interview-iq-umber.vercel.app/
 
 ---
 
