@@ -9,12 +9,13 @@ import { Badge, Progress } from "@/components/ui/Badge";
 import { scoreColor } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer } from "recharts";
-import { Download, BookOpen, Target, TrendingUp, Loader2 } from "lucide-react";
+import { Download, BookOpen, Target, TrendingUp, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 
 export default function ReportPage() {
   const { id } = useParams();
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   useEffect(() => {
     getReport(id as string)
@@ -27,7 +28,7 @@ export default function ReportPage() {
     const { default: html2canvas } = await import("html2canvas");
     const el = document.getElementById("report-content");
     if (!el) return;
-    const canvas = await html2canvas(el, { backgroundColor: "#08090c" });
+    const canvas = await html2canvas(el, { backgroundColor: "#08090c", scale: 2 });
     const pdf = new jsPDF("p", "mm", "a4");
     const w = pdf.internal.pageSize.getWidth();
     const h = (canvas.height / canvas.width) * w;
@@ -62,13 +63,18 @@ export default function ReportPage() {
             <h1 className="font-display text-3xl font-bold">Interview Report</h1>
             <p className="text-gray-400 mt-1">{report.completed_questions} of {report.total_questions} questions completed</p>
           </div>
-          <Button onClick={exportPDF} variant="outline"><Download size={14} /> Export PDF</Button>
+          <Button onClick={exportPDF} variant="outline">
+            <Download size={14} /> Export PDF
+          </Button>
         </div>
+
         <div id="report-content" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="md:col-span-2 flex flex-col items-center justify-center text-center py-8">
               <p className="text-gray-500 text-sm mb-2">Overall Score</p>
-              <p className={`font-display text-7xl font-bold ${scoreColor(report.overall_score)}`}>{report.overall_score}</p>
+              <p className={`font-display text-7xl font-bold ${scoreColor(report.overall_score)}`}>
+                {report.overall_score}
+              </p>
               <p className="text-gray-500 text-sm mt-1">out of 10</p>
             </Card>
             <Card className="md:col-span-2">
@@ -81,6 +87,7 @@ export default function ReportPage() {
               </ResponsiveContainer>
             </Card>
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(report.category_scores).map(([key, val]) => (
               <Card key={key} className="flex items-center gap-4 py-4">
@@ -88,43 +95,100 @@ export default function ReportPage() {
                   <p className="text-sm capitalize text-gray-400 mb-1.5">{key.replace(/_/g, " ")}</p>
                   <Progress value={val as number} />
                 </div>
-                <span className={`font-display font-bold text-lg ${scoreColor(val as number)}`}>{(val as number).toFixed(1)}</span>
+                <span className={`font-display font-bold text-lg ${scoreColor(val as number)}`}>
+                  {(val as number).toFixed(1)}
+                </span>
               </Card>
             ))}
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-red-400"><Target size={14} /> Weak Areas</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-red-400">
+                  <Target size={14} /> Weak Areas
+                </CardTitle>
+              </CardHeader>
               <ul className="space-y-2">
-                {report.weak_areas.map((a, i) => <li key={i} className="text-sm text-gray-300 flex gap-2"><span className="text-red-500">•</span>{a}</li>)}
+                {report.weak_areas.map((a, i) => (
+                  <li key={i} className="text-sm text-gray-300 flex gap-2">
+                    <span className="text-red-500 mt-0.5">•</span>{a}
+                  </li>
+                ))}
               </ul>
             </Card>
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-accent"><BookOpen size={14} /> Study Topics</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-accent">
+                  <BookOpen size={14} /> Study Topics
+                </CardTitle>
+              </CardHeader>
               <ul className="space-y-2">
-                {report.recommended_topics.map((t, i) => <li key={i} className="text-sm text-gray-300 flex gap-2"><span className="text-accent">→</span>{t}</li>)}
+                {report.recommended_topics.map((t, i) => (
+                  <li key={i} className="text-sm text-gray-300 flex gap-2">
+                    <span className="text-accent">→</span>{t}
+                  </li>
+                ))}
               </ul>
             </Card>
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-emerald-400"><TrendingUp size={14} /> Improvements</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-emerald-400">
+                  <TrendingUp size={14} /> Improvements
+                </CardTitle>
+              </CardHeader>
               <ul className="space-y-2">
-                {report.suggested_improvements.map((s, i) => <li key={i} className="text-sm text-gray-300 flex gap-2"><span className="text-emerald-500">✓</span>{s}</li>)}
+                {report.suggested_improvements.map((s, i) => (
+                  <li key={i} className="text-sm text-gray-300 flex gap-2">
+                    <span className="text-emerald-500">✓</span>{s}
+                  </li>
+                ))}
               </ul>
             </Card>
           </div>
+
           <Card>
             <CardHeader><CardTitle>Question Breakdown</CardTitle></CardHeader>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {report.question_breakdown.map((q, i) => (
-                <div key={i} className="border-t border-white/5 pt-4 first:border-0 first:pt-0">
-                  <div className="flex items-start justify-between gap-4 mb-2">
-                    <p className="text-sm text-gray-300 flex-1">{q.question}</p>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <Badge text={q.category} type="category" />
-                      <span className={`font-bold text-sm ${scoreColor(q.score)}`}>{q.score}/10</span>
+                <div key={i} className="border border-white/5 rounded-xl overflow-hidden">
+                  <button
+                    onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}
+                    className="w-full text-left p-4 hover:bg-white/3 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3 flex-1">
+                        <span className="text-xs text-gray-500 font-mono mt-0.5 flex-shrink-0">Q{i + 1}</span>
+                        <p className="text-sm text-gray-200 leading-relaxed">{q.question}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Badge text={q.category} type="category" />
+                        <Badge text={q.difficulty} type="difficulty" />
+                        <span className={`font-bold text-sm min-w-[40px] text-right ${scoreColor(q.score)}`}>
+                          {q.score}/10
+                        </span>
+                        {expandedIndex === i
+                          ? <ChevronUp size={14} className="text-gray-500" />
+                          : <ChevronDown size={14} className="text-gray-500" />
+                        }
+                      </div>
                     </div>
-                  </div>
-                  <p className="text-xs text-gray-500 line-clamp-2">{q.answer}</p>
+                  </button>
+
+                  {expandedIndex === i && (
+                    <div className="border-t border-white/5 p-4 space-y-4 bg-white/2">
+                      <div>
+                        <p className="text-xs font-medium text-accent mb-2">Your Answer</p>
+                        <div className="bg-white/3 rounded-xl p-4 border border-white/5">
+                          <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{q.answer}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Result:</span>
+                        <Badge text={q.correctness} type="correctness" />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

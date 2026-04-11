@@ -6,11 +6,22 @@ import { VideoOff, Mic } from "lucide-react";
 export function VideoPanel({ isSpeaking = false }: { isSpeaking?: boolean }) {
   const { videoRef, active, error, startCamera, stopCamera } = useCamera();
 
-  useEffect(() => { startCamera(); return () => stopCamera(); }, []);
+  useEffect(() => {
+    startCamera();
+    return () => {
+      stopCamera();
+    };
+  }, []);
 
   return (
     <div className="relative rounded-2xl overflow-hidden bg-night-800 border border-white/5 aspect-video w-full">
-      <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        className="w-full h-full object-cover scale-x-[-1]"
+      />
       {!active && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-500">
           <VideoOff size={32} />
