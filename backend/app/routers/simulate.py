@@ -9,13 +9,21 @@ router = APIRouter(prefix="/api/simulate", tags=["simulate"])
 @router.post("/respond")
 async def respond(request: SimulateRequest):
     try:
-        response = await get_interviewer_response(request.question_text, request.answer_text, request.interviewer_style)
-        db = get_db()
-        answer = Answer(question_id=request.question_id if hasattr(request, 'question_id') else "q", text=request.answer_text)
-        await db.sessions.update_one(
-            {"id": request.session_id},
-            {"$push": {"answers": answer.model_dump()}},
+        response = await get_interviewer_response(
+            request.question_text,
+            request.answer_text,
+            request.interviewer_style,
         )
+        try:
+            db = get_db()
+            if db is not None:
+                answer = Answer(question_id="sim", text=request.answer_text)
+                await db.sessions.update_one(
+                    {"id": request.session_id},
+                    {"$push": {"answers": answer.model_dump()}},
+                )
+        except Exception as db_error:
+            print(f"DB save skipped: {db_error}")
         return {"response": response.strip()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
