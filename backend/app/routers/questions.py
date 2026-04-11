@@ -4,6 +4,7 @@ from app.services.question_service import generate_questions
 from app.services.groq_service import transcribe_audio
 from app.database import get_db
 from app.models.session import Session, SessionMode
+from app.routers.reports import in_memory_sessions
 import uuid
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])
@@ -20,19 +21,23 @@ async def generate(request: GenerateQuestionsRequest):
             request.num_scenario,
         )
         session_id = str(uuid.uuid4())
+        session = Session(
+            id=session_id,
+            job_role=request.job_role,
+            job_description=request.job_description,
+            mode=SessionMode.practice,
+            questions=questions,
+        )
+        session_data = session.model_dump()
+        in_memory_sessions[session_id] = session_data
+
         try:
-            session = Session(
-                id=session_id,
-                job_role=request.job_role,
-                job_description=request.job_description,
-                mode=SessionMode.practice,
-                questions=questions,
-            )
             db = get_db()
             if db is not None:
-                await db.sessions.insert_one(session.model_dump())
+                await db.sessions.insert_one(session_data.copy())
         except Exception as db_error:
             print(f"DB save skipped: {db_error}")
+
         return {"session_id": session_id, "questions": [q.model_dump() for q in questions]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
