@@ -1,4 +1,4 @@
- from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import PlainTextResponse
