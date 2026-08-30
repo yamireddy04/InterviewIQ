@@ -1,6 +1,6 @@
 # 🎯 InterviewIQ
 
-A full-stack interview simulation platform implementing a four-layer Multi-Layer Intent Model (MLIM) for real-time pragmatic and affective analysis of spoken interview answers — with browser-based proctoring, JWT authentication, and a self-service privacy layer, built on FastAPI and Next.js.
+A full-stack interview simulation platform implementing a four-layer Multi-Layer Intent Model (MLIM) for real-time pragmatic and affective analysis of spoken interview answers — with browser-based cheating detection, JWT authentication, and a self-service privacy layer, built on FastAPI and Next.js.
 
 **Live Demo:** https://interview-iq-umber.vercel.app/
 
@@ -26,7 +26,7 @@ Most interview-practice tools score an answer once, on its content alone, and st
 
 InterviewIQ is an AI interview coach with two modes: **Practice**, which generates role-specific questions and returns structured feedback after every answer, and **Simulation**, which behaves like a strict, neutral interviewer and defers all evaluation to a final report. Every answer — in either mode — is independently passed through the MLIM pipeline: an affective-sentiment layer, a pragmatics layer, a goal-state tracker, and an intent-fusion layer that combines the first three into a labeled intent with a feature-level explanation. MLIM output is persisted per answer, surfaced live during the interview, visualized on a dedicated analytics dashboard, and folded into the final report alongside the conventional correctness/score/strengths/weaknesses feedback.
 
-Around that core sit the parts that make it usable as a real application: email/password auth with refresh-token rotation and account lockout, a proctoring layer that watches for tab-switching, copy-paste, and multiple/no faces in frame, a self-service data export and account-deletion endpoint, and a Prometheus-style metrics endpoint for operational visibility.
+Around that core sit the parts that make it usable as a real application: email/password auth with refresh-token rotation and account lockout, a browser-side integrity layer that watches for tab-switching, copy-paste, and DevTools/inactivity signals, a self-service data export and account-deletion endpoint, and a Prometheus-style metrics endpoint for operational visibility.
 
 ---
 
@@ -39,8 +39,8 @@ Around that core sit the parts that make it usable as a real application: email/
 - **Streamed interviewer responses** — simulation-mode acknowledgements and clarification follow-ups are streamed token-by-token over Server-Sent Events rather than returned as one blocking call.
 - **Four-layer MLIM pipeline**, run on every answer (see the layer table below): affective-sentiment detection, pragmatic/speech-act classification, goal-state tracking with drift detection, and intent fusion with per-feature attribution.
 - **Escalation flagging** — answers with high intent-entropy combined with high modeled stress, or high-confidence affective masking, are automatically written to a per-user escalation queue that the candidate can review and resolve via `GET`/`PATCH /api/mlim/escalations`.
-- **Live camera-based proctoring** — face-api.js runs `TinyFaceDetector` + expression analysis in-browser during the interview to flag no-face and multiple-face conditions, alongside tab-switch, window-blur, copy/paste, right-click, DevTools-open, and inactivity detection; repeated flags disable the camera/mic streams client-side.
-- **Final assessment report** — overall score, category breakdown (technical knowledge / communication / clarity / confidence), a per-question expandable Q&A view, an MLIM session summary, an integrity summary derived from the proctoring events, and a PDF export built with ReportLab.
+- **Live camera-based expression analysis** — face-api.js runs `TinyFaceDetector` with expression analysis in-browser, feeding a live facial-expression signal into the ASL layer's affect estimate and rendering it on-screen; alongside this, a separate browser-side integrity layer flags tab-switch, window-blur, copy/paste, right-click, DevTools-open, and inactivity events, disabling the camera/mic streams client-side after repeated flags. **Note:** `no_face` / `multiple_faces` are defined as integrity-event types in the frontend but are not currently triggered anywhere — the face-detection call in `VideoPanel.tsx` uses `detectSingleFace` (which cannot report a face count) and only feeds the ASL signal, not the integrity-event pipeline. See Limitations.
+- **Final assessment report** — overall score, category breakdown (technical knowledge / communication / clarity / confidence), a per-question expandable Q&A view, an MLIM session summary, an integrity summary derived from the browser-side integrity events, and a PDF export built with ReportLab.
 - **JWT authentication** — httpOnly access/refresh cookies, refresh-token rotation with reuse detection (a reused refresh token revokes every session for that user), per-IP rate limiting on login/register, and account lockout after repeated failed attempts.
 - **Session dashboard** — a history view of past sessions with score tracking, plus a dedicated MLIM analytics dashboard (valence/arousal scatter, goal-belief area chart, intent-entropy line chart, failure-mode timeline).
 - **Self-service privacy controls** — a full data export (every record tied to a user's account, rendered as a downloadable PDF via ReportLab) and a confirmation-gated account deletion that cascades across sessions, reports, MLIM analyses, escalations, and integrity events.
@@ -54,7 +54,7 @@ Around that core sit the parts that make it usable as a real application: email/
 | Layer | Function | Implementation |
 |---|---|---|
 | ASL — Affective Sentiment Layer | Polarity, valence/arousal, and affective-masking detection (confident wording vs. modeled distress) | Lexicon pass (negation/intensifier/dampener-aware) + LLM enrichment, `openai/gpt-oss-20b` via Groq |
-| PEL — Pragmatic Enrichment Layer | Speech-act classification (assertion / expression / help-seeking / question), sarcasm and Gricean-maxim-violation detection | LLM pass over the last *k* turns of context (`MLIM_CONTEXT_HORIZON_K`), `openai/gpt-oss-20b` |
+| PEL — Pragmatic Enrichment Layer | Speech-act classification per Searle's taxonomy (directive / commissive / expressive / declarative / representative), with a separate interrogative-form flag, plus sarcasm and Gricean-maxim-violation detection (quantity/quality/relation/manner) | LLM pass over the last *k* turns of context (`MLIM_CONTEXT_HORIZON_K`), `openai/gpt-oss-20b` |
 | GSTL — Goal-State Tracking Layer | Tracks a belief distribution over five candidate goals (demonstrate competence, seek feedback, pass screening, build confidence, explore role) via a hand-specified Markov transition matrix, and flags goal drift via KL divergence over a rolling window | `openai/gpt-oss-20b` (fast) / `openai/gpt-oss-120b` (reasoning) via Groq |
 | IFL — Intent Fusion Layer | Fuses ASL + PEL + GSTL into one of eight intent labels (genuine answer, face-saving assertion, request for challenge, expressing confusion, sarcastic response, seeking validation, committed retry, off-topic), with Shannon-entropy-based clarification triggering and per-feature attribution | Rule-weighted prior fusion + LLM pass, `openai/gpt-oss-20b`, explanation module computes feature attributions and a counterfactual |
 
@@ -68,15 +68,15 @@ These sit around the MLIM pipeline and the interview flow rather than inside it:
 
 | Component | What it does |
 |---|---|
-| `useCheatingDetection` (frontend hook) | Detects tab switches, window blur, copy/paste, right-click, DevTools-open, and prolonged inactivity during a session; camera and mic are disabled client-side after repeated flags |
-| `VideoPanel` + face-api.js | Runs `TinyFaceDetector` with expression analysis in-browser to flag no-face and multiple-faces-in-frame conditions during proctored sessions |
-| `POST /api/integrity/events` | Batches and persists proctoring events per session, feeding the integrity score shown in the final report |
+| `useCheatingDetection` (frontend hook) | Detects tab switches, window blur, copy/paste, right-click, DevTools-open, and prolonged inactivity during a session; camera and mic are disabled client-side after repeated flags. The hook's type union and message table also define `no_face` and `multiple_faces` event types, but no current code path dispatches them (see Limitations) |
+| `VideoPanel` + face-api.js | Runs `TinyFaceDetector` (`detectSingleFace`) with expression analysis in-browser to produce a live facial-expression signal, which is displayed on-screen and passed into the ASL layer as a `face_snapshot`; it does not currently feed the integrity-event pipeline |
+| `POST /api/integrity/events` | Batches and persists integrity events per session, feeding the integrity score shown in the final report |
 | JWT auth (`app/auth/`) | httpOnly access + refresh cookies, refresh-token rotation with reuse detection (a reused token revokes every session for that user), bcrypt password hashing, per-IP rate limiting on login/register, and account lockout after repeated failed attempts |
 | `evaluate_escalation` (`services/mlim/escalation.py`) | Flags an answer into the candidate's own escalation queue when modeled intent-entropy and stress are both high, or when affective masking is detected with high confidence — reviewable and resolvable via `GET`/`PATCH /api/mlim/escalations` |
 | `/api/privacy/export` / `/api/privacy/account` | Full data export of every record tied to a user, rendered as a downloadable PDF, and a confirmation-gated account deletion cascading across sessions, reports, MLIM analyses, escalations, and integrity events, implemented in `privacy_service.py` |
-| `add_laplace_noise` (`privacy_service.py`) | Applies differential-privacy noise to cross-session mutual-information estimates before returning them, when more than one session contributes to the aggregate |
+| `add_laplace_noise` (`privacy_service.py`) | Applies differential-privacy noise (inverse-CDF Laplace sampling) to cross-session mutual-information estimates before returning them, when more than one session contributes to the aggregate |
 | `app/core/metrics.py` | A hand-rolled Prometheus-text metrics registry (counters, gauges, histograms) tracking per-route request latency, per-MLIM-stage timing, and Groq/Mongo error counts, exposed at `/metrics` |
-| Security response headers | `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, and a `Permissions-Policy` denying camera/mic/geolocation to every origin but the app itself, applied on every response |
+| Security response headers | `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, and a `Permissions-Policy` header (`camera=(), microphone=(), geolocation=()`) applied on every response |
 
 > **Note on `require_admin`:** only the fairness-probe endpoint (`POST /api/mlim/fairness/probe`) is gated behind an admin role check. The escalation-queue endpoints are per-user, self-service surfaces — not a cross-candidate moderator dashboard (see Limitations).
 
@@ -117,12 +117,12 @@ POST /api/questions/generate ──► Groq (openai/gpt-oss-120b)
                                    Report JSON ──► MongoDB (+ in-memory fallback)
 ```
 
-**Proctoring flow (both modes)**
+**Integrity flow (both modes)**
 
 ```
-Camera + Mic ──► face-api.js (TinyFaceDetector, in-browser)
-                        │
-useCheatingDetection ◄──┴── tab/blur/copy-paste/devtools/inactivity listeners
+Camera ──► face-api.js (TinyFaceDetector, in-browser) ──► expression signal ──► ASL layer + on-screen display
+
+useCheatingDetection ──── tab/blur/copy-paste/devtools/inactivity listeners
         │
         ▼
 POST /api/integrity/events (batched) ──► session.integrity_events
@@ -130,6 +130,7 @@ POST /api/integrity/events (batched) ──► session.integrity_events
                                                   ▼
                               Integrity score computed at report time
 ```
+*(Camera-based face detection and the tab/blur/etc. integrity listeners are two separate, currently unconnected signal paths — see Limitations.)*
 
 **Voice input flow**
 
@@ -217,7 +218,7 @@ The frontend has no unit-test suite; CI instead runs `tsc --noEmit` and `next bu
 | In-memory session fallback | Practice/Simulation flow works even when `get_db()` returns `None` | The interview session shouldn't hard-fail because of a transient MongoDB Atlas connection issue |
 | Refresh-token rotation with reuse detection | Every refresh issues a new token and invalidates the old one; reuse of an already-rotated token revokes all sessions for that user | Standard mitigation against stolen refresh tokens, without requiring a separate session-revocation UI |
 | Idempotent, race-guarded voice-answer finalization | `useInterviewVoiceInput` drives a `Date.now()`-based countdown (immune to re-render throttling) and a ref-guarded `finalize()` that Done, the "that's all" voice command, and timeout all funnel through, so a near-simultaneous trigger from more than one path still submits exactly once | Voice UIs have three independent event sources racing to end the same answer (user click, speech event, timer tick); a single idempotent finalize path is simpler and safer than de-duplicating after the fact |
-| Client-side proctoring signals, server-side integrity scoring | Detection (`useCheatingDetection`, face-api.js) runs in the browser; the backend only stores and scores the resulting events | Keeps the browser responsive (no round-trip needed to flag a tab switch) while keeping the integrity score itself server-computed and tamper-resistant to simple client patching |
+| Client-side integrity signals, server-side scoring | Detection (`useCheatingDetection`, face-api.js) runs in the browser; the backend only stores and scores the resulting events | Keeps the browser responsive (no round-trip needed to flag a tab switch) while keeping the integrity score itself server-computed and tamper-resistant to simple client patching |
 | Hand-rolled Prometheus metrics registry over a dependency | `app/core/metrics.py` implements Counter/Gauge/Histogram from scratch | Avoids adding a metrics-client dependency for a handful of counters and one latency histogram; output is still real Prometheus text format at `/metrics` |
 | Differential-privacy noise on cross-session MI comparisons | `add_laplace_noise` applied only when aggregating more than one session | The mutual-information benchmark is a diagnostic aggregate, not a per-session value shown to the user, so it gets the added privacy protection when it spans sessions |
 
@@ -228,7 +229,7 @@ The frontend has no unit-test suite; CI instead runs `tsc --noEmit` and `next bu
 - Passwords are hashed with bcrypt; access and refresh tokens are httpOnly, `SameSite`-scoped cookies (`secure=True`, `samesite=none` outside development) — never stored in `localStorage`.
 - Refresh-token reuse revokes every active session for that user, not just the reused token.
 - Login and registration are rate-limited per client IP (Redis-backed, with an in-memory fallback if Redis is unreachable); accounts lock out for a configurable window after repeated failed logins.
-- `TrustedHostMiddleware` and a strict `CORSMiddleware` origin allowlist are enforced on every request; every response carries `X-Content-Type-Options`, `X-Frame-Options: DENY`, and a `Permissions-Policy` denying camera/mic/geolocation to third-party origins.
+- `TrustedHostMiddleware` and a strict `CORSMiddleware` origin allowlist are enforced on every request; every response carries `X-Content-Type-Options`, `X-Frame-Options: DENY`, and a `Permissions-Policy: camera=(), microphone=(), geolocation=()` header.
 - Every user-scoped MongoDB query filters by `user_id` at the query level (no separate row-level-security layer, since this is application-enforced rather than database-enforced).
 - Account deletion requires an explicit `confirm: true` in the request body, not just a client-side button click, and cascades across every collection listed in `privacy_service.USER_ID_COLLECTIONS`.
 - The Groq API key and JWT signing secret live only in backend environment variables; `JWT_SECRET` is validated at startup to reject the placeholder default and anything under 32 characters.
@@ -237,10 +238,10 @@ The frontend has no unit-test suite; CI instead runs `tsc --noEmit` and `next bu
 
 ## ⚠️ Limitations
 
+- **Camera-based face detection and the browser integrity-event pipeline are not currently connected.** `VideoPanel.tsx` uses face-api.js's `detectSingleFace`, which structurally cannot report a face count, and its output (`onFaceData`) is wired only into the ASL layer's affect signal and the live on-screen overlay — not into `useCheatingDetection`. The hook does define `no_face` and `multiple_faces` as integrity-event types with user-facing message copy, but no code path in the current codebase calls `recordEvent` for either, so today's integrity score reflects only tab/window/clipboard/DevTools/inactivity signals, not face presence or count.
 - **GSTL's goal-transition matrix is hand-specified, not learned:** the probabilities in `TRANSITION_MATRIX` are fixed constants reflecting a plausible goal-persistence prior, not values fit to labeled session data.
 - **The fairness probe is a stability check, not a validated bias audit:** `run_fairness_probe` checks whether the IFL intent label stays consistent across four writing-style paraphrases of the same answer; it is a lightweight consistency signal, not a substitute for a proper fairness evaluation against demographic or protected-attribute data, which the system does not collect.
 - **The MI-comparison benchmark needs a minimum sample size:** both `/api/mlim/session/{id}/mi-comparison` and `/api/mlim/user/mi-comparison` require at least 5 analyses to return a result, and are single-user/single-session descriptive statistics, not a controlled study.
-- **Camera-based proctoring runs entirely client-side:** face-api.js detection happens in the browser before any event reaches the server, so it is defeatable by anyone modifying client-side JavaScript; it is a friction/deterrent layer, not a tamper-proof exam-integrity system.
 - **LLM-based scoring is not a standardized rubric:** correctness, score, and category-level feedback all depend on the reasoning model's judgment at generation time, and can vary between runs of the same answer.
 - **No adaptive difficulty:** question difficulty is fixed at generation time and does not change based on how the candidate is performing mid-session.
 - **In-memory session fallback is not durable:** when MongoDB is unavailable, session state lives only in the FastAPI process's memory and is lost on restart or redeploy.
@@ -250,12 +251,12 @@ The frontend has no unit-test suite; CI instead runs `tsc --noEmit` and `next bu
 
 ## 🚀 Future Work
 
+- Wire the existing `no_face` / `multiple_faces` integrity-event types to the actual face-detection output — e.g. switch `VideoPanel.tsx` to `detectAllFaces` and call `recordEvent` when the detected face count is 0 or >1 — so camera-based signals reach the integrity score, not just the ASL affect estimate.
 - Fit the GSTL goal-transition matrix to labeled session-trajectory data instead of hand-set constants, and evaluate goal-drift detection against ground-truth trajectory labels.
 - Extend the fairness probe from an intent-label-stability check into a proper fairness evaluation, once a labeled evaluation set with protected-attribute proxies exists.
 - Adaptive question difficulty, adjusted mid-session from the candidate's running MLIM/score signal rather than fixed at generation time.
 - Resume upload with parsing, so question generation can personalize to a candidate's actual background rather than job description alone.
 - A real admin-scoped moderation view over the escalation queue (`require_admin`-gated, cross-user), with notification/paging so a flagged session doesn't require polling `GET /api/mlim/escalations`.
-- Replace the browser-only proctoring signals with a server-verifiable integrity check (e.g. periodic server-side frame sampling) to reduce client-side defeatability.
 - Cross-session analytics beyond the current MLIM dashboard — trend lines for intent stability and goal drift across a user's full session history, not just within one session.
 
 ---
@@ -309,6 +310,8 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 
 > Running the backend manually without Docker (step 4 below)? Copy the same file to `backend/.env` as well — `pydantic-settings` loads `.env` relative to the directory `uvicorn` is started from.
 
+> **Do not commit a populated `.env` or `backend/.env` to version control.** Both are listed in `.gitignore`, but double-check before pushing — a `.env` containing real Groq/JWT/MongoDB credentials should never end up in git history or a shared archive of this project.
+
 **3. Run with Docker Compose (recommended)**
 ```bash
 docker-compose up --build
@@ -347,7 +350,7 @@ ruff check .
 
 1. Register an account, then go to **Setup** — select a job role, paste a job description, choose Practice or Simulation mode
 2. Click **Start Interview** — questions are generated in real time
-3. Answer each question via text or voice; grant camera/mic access if you want the proctoring signals active. In voice mode, live captions appear as you speak — finish with **Done**, saying **"that's all,"** or let the timer run out
+3. Answer each question via text or voice; grant camera/mic access if you want the live expression overlay and integrity signals active. In voice mode, live captions appear as you speak — finish with **Done**, saying **"that's all,"** or let the timer run out
 4. In Practice mode, review your feedback card and live MLIM panel after each answer
 5. Complete all questions to receive your **Final Assessment Report**
 6. Export the report as PDF, review the **MLIM Analytics Dashboard**, or view past sessions on the main **Dashboard**
